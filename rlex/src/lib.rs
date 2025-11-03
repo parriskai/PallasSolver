@@ -114,3 +114,16 @@ impl<'a, AT, BT, A: Parser<'a, AT>, B: Parser<'a, BT>> Parser<'a, (AT, BT)> for 
         Ok((result, (a, b)))
     }
 }
+
+pub struct Or<A, B>(pub A, pub B);
+
+impl<'a, G, A: Parser<'a, T>, B: Parser<'a, T>> Parser<'a, T> for Or<A,B> {
+    fn invoke(&self, input: &'a str) -> PResult<'a, T> {
+        if let Ok((res, t)) = self.0.invoke(input){
+            return Ok((res, t));
+        }
+        else {
+            return self.1.invoke(input);
+        }
+    }
+}
