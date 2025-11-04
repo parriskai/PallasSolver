@@ -1,7 +1,24 @@
+use std::marker::PhantomData;
+
 pub type PResult<'a, T> = core::result::Result<(&'a str, T), ()>;
 
 pub trait Parser<'a, T> {
     fn invoke(&self, input: &'a str) -> PResult<'a, T>;
+    fn map<K, F: Fn(T) -> K>(self, f: F) -> Map<Self, T, F> where Self: Sized{
+        Map {inner: self, f, _phantom: PhantomData}
+    }
+}
+
+pub struct Map<P, T, F>{
+    inner: P,
+    f: F,
+    _phantom: PhantomData<T>
+}
+
+impl<'a, P, O, T, F> Parser<'a, O> for Map<P, T, F> where P: Parser<'a, T>, F: Fn(T) -> O{
+    fn invoke(&self, input: &'a str) -> PResult<'a, O> {
+        self.inner.invoke(input).map(|(r, t)| (r, (self.f)(t)))
+    }
 }
 
 impl<'a, T, F> Parser<'a, T> for F
@@ -105,19 +122,9 @@ impl <'a, T, P: Parser<'a, T>> Parser<'a, Option<T>> for Optional<P>{
     }
 }
 
-pub struct And<A,B>(pub A, pub B);
-
-impl<'a, AT, BT, A: Parser<'a, AT>, B: Parser<'a, BT>> Parser<'a, (AT, BT)> for And<A,B> {
-    fn invoke(&self, input: &'a str) -> PResult<'a, (AT, BT)> {
-        let (input, a) = self.0.invoke(input)?;
-        let (result, b) = self.1.invoke(input)?;
-        Ok((result, (a, b)))
-    }
-}
-
 pub struct Or<A, B>(pub A, pub B);
 
-impl<'a, G, A: Parser<'a, T>, B: Parser<'a, T>> Parser<'a, T> for Or<A,B> {
+impl<'a, T, A: Parser<'a, T>, B: Parser<'a, T>> Parser<'a, T> for Or<A,B> {
     fn invoke(&self, input: &'a str) -> PResult<'a, T> {
         if let Ok((res, t)) = self.0.invoke(input){
             return Ok((res, t));
@@ -126,4 +133,23 @@ impl<'a, G, A: Parser<'a, T>, B: Parser<'a, T>> Parser<'a, T> for Or<A,B> {
             return self.1.invoke(input);
         }
     }
+}
+
+pub fn whitespace0<'a>(input: &'a str) -> PResult<'a, ()>{
+    let (res, _) = AnyWhere(|c: char| c.is_whitespace()).invoke(input)?;
+    return Ok((res, ()));
+}
+
+pub fn whitespace1<'a>(input: &'a str) -> PResult<'a, ()>{
+    let (res, w) = AnyWhere(|c: char| c.is_whitespace()).invoke(input)?;
+    if w.len() == 0{
+        return Err(());
+    } else{
+        return Ok((res, ()));
+    }
+}
+
+pub trait MultiInvoke<'a, T> {
+    fn _and(&self, input: &'a str) -> PResult<'a, T>;
+    fn _or(&self, input: &'a str) -> PResult<'a, T>;
 }
