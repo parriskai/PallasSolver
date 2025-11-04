@@ -1,37 +1,89 @@
 use std::marker::PhantomData;
+pub mod utils;
 
+/// Parser result type.
+/// 'a: the lifetime of the input
+/// T: the type of the parsed value
+/// Wrapper for Result<(&str, Value), Error>
 pub type PResult<'a, T> = core::result::Result<(&'a str, T), ()>;
 
+/// Parser trait
+/// 'a: the lifetime of the input
+/// T: the type of the parsed value
 pub trait Parser<'a, T> {
+    /// Invoke the parser on the input
+    /// input: the input to parse
+    /// returns: the remaining input and the parsed value if successful, otherwise an error
     fn invoke(&self, input: &'a str) -> PResult<'a, T>;
+    
+    /// Map the parsed value to a new type
+    /// K: the type of the new value
+    /// F: the function to map the value
+    /// returns: a new parser that maps the parsed value to a new type
     fn map<K, F: Fn(T) -> K>(self, f: F) -> Map<Self, T, F> where Self: Sized{
         Map {inner: self, f, _phantom: PhantomData}
     }
+
+    /// Union of two parsers
+    /// P: the type of the second parser
+    /// returns: An Or parser that tries the first parser, and if it fails, tries the second parser
+    /// If both parsers fail, returns an error
+    //// Can be chained
+    fn or<P: Parser<'a, T>>(self, other: P) -> Or<Self, P> where Self: Sized{
+        Or(self, other)
+    }
 }
 
+/// Mapped Parser Type
+/// P: the inner parser
+/// T: the type of the parsed value
+/// F: the function to map the value
 pub struct Map<P, T, F>{
     inner: P,
     f: F,
     _phantom: PhantomData<T>
 }
-
 impl<'a, P, O, T, F> Parser<'a, O> for Map<P, T, F> where P: Parser<'a, T>, F: Fn(T) -> O{
     fn invoke(&self, input: &'a str) -> PResult<'a, O> {
         self.inner.invoke(input).map(|(r, t)| (r, (self.f)(t)))
     }
 }
 
+/// Or Parser Type
+/// A: the first parser
+/// B: the second parser
+/// T: the type of the parsed value
+/// If the first parser succeeds, returns its value
+/// If the first parser fails, tries the second parser
+/// If both parsers fail, returns an error
+pub struct Or<A, B>(pub A, pub B);
+
+impl<'a, T, A: Parser<'a, T>, B: Parser<'a, T>> Parser<'a, T> for Or<A,B> {
+    fn invoke(&self, input: &'a str) -> PResult<'a, T> {
+        if let Ok((res, t)) = self.0.invoke(input){
+            return Ok((res, t));
+        }
+        else {
+            return self.1.invoke(input);
+        }
+    }
+}
+
+// Implement Parser for generic functions
 impl<'a, T, F> Parser<'a, T> for F
-where
-    F: Fn(&'a str) -> PResult<'a, T>,
-{
+where F: Fn(&'a str) -> PResult<'a, T>{
     fn invoke(&self, input: &'a str) -> PResult<'a, T> {
         self(input)
     }
 }
 
-
+/// Exact String type Parser
+/// String: the string to consume
+/// Consumes exactly the string given.
+/// If the input starts with the string, returns a blank Ok value.
+/// If the input does not start with the string, returns an error.
 pub struct Exact(pub String);
+
 impl<'a> Parser<'a, ()> for Exact {
     fn invoke(&self, input: &'a str) -> PResult<'a, ()> {
         if input.starts_with(self.0.as_str()){
@@ -40,6 +92,12 @@ impl<'a> Parser<'a, ()> for Exact {
     }
 }
 
+
+/// AnyN Parser
+/// usize: the number of characters to consume
+/// Consumes exactly N characters.
+/// If the input is at least N characters long, consumes N characters and returns them as a &str.
+/// If the input is less than N characters long, returns an error.
 pub struct AnyN(pub usize);
 
 impl<'a> Parser<'a, &'a str> for AnyN {
@@ -53,17 +111,21 @@ impl<'a> Parser<'a, &'a str> for AnyN {
     }
 }
 
+/// Any Until Parser
+/// P: Terminating parser
+/// Consumes until the terminating parser succeeds.
+/// If the terminating parser succeeds, returns a &str and terminating value.
+/// If the terminating parser never succeeds, returns an error.
+pub struct AnyUntil<P>(pub P);
 
-pub struct AnyUntil<F>(pub F);
-
-impl<'a, T, F> Parser<'a, (&'a str, T)> for AnyUntil<F>
+impl<'a, T, P> Parser<'a, (&'a str, T)> for AnyUntil<P>
 where
-    F: Fn(&'a str, &'a str) -> PResult<'a, T>,
+    P: Parser<'a, T>
 {
     fn invoke(&self, input: &'a str) -> PResult<'a, (&'a str, T)> {
         for (loc, _) in input.char_indices() {
             let (a, b) = input.split_at(loc);
-            if let Ok((res, t)) = (self.0)(a, b) {
+            if let Ok((res, t)) = self.0.invoke(b) {
                 return Ok((res, (a, t)));
             }
         }
@@ -71,6 +133,12 @@ where
     }
 }
 
+/// Any While Parser
+/// fn: consumed condition function
+/// Consumes while the condition function returns true.
+/// When the condition function returns false, returns a &str of all characters until the first false.
+/// If the condition function never returns false, consumes and returns the entire input.
+/// Never returns an error.
 pub struct AnyWhile(pub fn(&str, &str) -> bool);
 
 impl<'a> Parser<'a, &'a str> for AnyWhile {
@@ -79,7 +147,7 @@ impl<'a> Parser<'a, &'a str> for AnyWhile {
         for (i, _) in input.char_indices() {
             let (consumed, remaining) = input.split_at(i);
             if !(self.0)(consumed, remaining) {
-                if i == 0 { return Err(()); }
+                if i == 0 { return Ok((input, "")) }
                 let (consumed, remaining) = input.split_at(last);
                 return Ok((remaining, consumed));
             }
@@ -89,6 +157,11 @@ impl<'a> Parser<'a, &'a str> for AnyWhile {
     }
 }
 
+/// Any Where Parser
+/// fn: character condition function
+/// Consumes every character that satisfies the condition function until the first character that does not.
+/// If the condition function never returns false, consumes and returns the entire input.
+/// Never returns an error.
 pub struct AnyWhere<F>(pub F);
 
 impl<'a, F> Parser<'a, &'a str> for AnyWhere<F>
@@ -109,6 +182,11 @@ where
     }
 }
 
+/// Optional Parser
+/// P: the parser to optionally consume
+/// If the parser succeeds, returns the parsed value.
+/// If the parser fails, returns None.
+/// Never returns an error.
 pub struct Optional<P>(pub P);
 
 impl <'a, T, P: Parser<'a, T>> Parser<'a, Option<T>> for Optional<P>{
@@ -122,34 +200,6 @@ impl <'a, T, P: Parser<'a, T>> Parser<'a, Option<T>> for Optional<P>{
     }
 }
 
-pub struct Or<A, B>(pub A, pub B);
-
-impl<'a, T, A: Parser<'a, T>, B: Parser<'a, T>> Parser<'a, T> for Or<A,B> {
-    fn invoke(&self, input: &'a str) -> PResult<'a, T> {
-        if let Ok((res, t)) = self.0.invoke(input){
-            return Ok((res, t));
-        }
-        else {
-            return self.1.invoke(input);
-        }
-    }
-}
-
-pub fn whitespace0<'a>(input: &'a str) -> PResult<'a, ()>{
-    let (res, _) = AnyWhere(|c: char| c.is_whitespace()).invoke(input)?;
-    return Ok((res, ()));
-}
-
-pub fn whitespace1<'a>(input: &'a str) -> PResult<'a, ()>{
-    let (res, w) = AnyWhere(|c: char| c.is_whitespace()).invoke(input)?;
-    if w.len() == 0{
-        return Err(());
-    } else{
-        return Ok((res, ()));
-    }
-}
-
 pub trait MultiInvoke<'a, T> {
     fn _and(&self, input: &'a str) -> PResult<'a, T>;
-    fn _or(&self, input: &'a str) -> PResult<'a, T>;
 }
