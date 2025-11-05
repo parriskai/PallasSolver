@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use concat_idents::concat_idents;
 pub mod utils;
 
 /// Parser result type.
@@ -182,6 +183,19 @@ where
     }
 }
 
+pub struct MinChars<P>(pub P, pub usize);
+
+impl<'a, T, P: Parser<'a, T>> Parser<'a, T> for MinChars<P> {
+    fn invoke(&self, input: &'a str) -> PResult<'a, T> {
+        let (remainder, t) = self.0.invoke(input)?;
+        if input.chars().count() - remainder.chars().count() >= self.1{
+            Ok((remainder, t))
+        } else{
+            Err(())
+        }
+    }
+}
+
 /// Optional Parser
 /// P: the parser to optionally consume
 /// If the parser succeeds, returns the parsed value.
@@ -200,6 +214,26 @@ impl <'a, T, P: Parser<'a, T>> Parser<'a, Option<T>> for Optional<P>{
     }
 }
 
-pub trait MultiInvoke<'a, T> {
-    fn _and(&self, input: &'a str) -> PResult<'a, T>;
+macro_rules! tuple_and_parser {
+    ($($name:ident:$pn:ident),+) => {
+        #[allow(nonstandard_style)]
+        impl <'a, $($name, $pn: Parser<'a, $name>),+> Parser<'a, ($($name),+)> for ($($pn),+){
+            fn invoke(&self, input: &'a str) -> PResult<'a,  ($($name),+)>{
+                let ($($name),+) = self;
+                $(
+                    let (input, $name) = $name.invoke(input)?;
+
+                )+
+                return Ok((input, ($($name),+)))
+            }
+        }
+    };
 }
+
+tuple_and_parser!(A:PA, B:PB);
+tuple_and_parser!(A:PA, B:PB, C:PC);
+tuple_and_parser!(A:PA, B:PB, C:PC, D:PD);
+tuple_and_parser!(A:PA, B:PB, C:PC, D:PD, E:PE);
+tuple_and_parser!(A:PA, B:PB, C:PC, D:PD, E:PE, F:PF);
+tuple_and_parser!(A:PA, B:PB, C:PC, D:PD, E:PE, F:PF, G:PG);
+tuple_and_parser!(A:PA, B:PB, C:PC, D:PD, E:PE, F:PF, G:PG, H:PH);

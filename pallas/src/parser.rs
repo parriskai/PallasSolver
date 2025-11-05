@@ -1,13 +1,15 @@
-use rlex::{And, AnyUntil, AnyWhere, Exact, Optional, Or, PResult, Parser, whitespace0, whitespace1};
+use rlex::{AnyUntil, AnyWhere, Exact, MinChars, Optional, Or, PResult, Parser, utils::{whitespace0,whitespace1}};
 
+#[derive(Debug)]
 pub struct Identifier(pub String);
 
 pub fn identity<'a>(input: &'a str) -> PResult<'a, Identifier>{
-    And(
-        AnyWhere(|c: char| c.is_alphabetic() || c == '_'),
-        Optional(AnyWhere(|c:char | c.is_alphanumeric())))
-        .invoke(input)
-        .map(|(res, (a, b)) | {
+    println!("");
+    (
+        MinChars(AnyWhere(|c: char| c.is_alphabetic() || c == '_'), 1),
+        Optional(AnyWhere(|c:char | c.is_alphanumeric()))
+    ).invoke(input)
+     .map(|(res, (a, b)) | {
             if let Some(b) = b{
                 return (res, Identifier(a.to_string() + b));
             } else {
@@ -16,6 +18,7 @@ pub fn identity<'a>(input: &'a str) -> PResult<'a, Identifier>{
     })
 }
 
+#[derive(Debug)]
 pub struct InternalName(pub Identifier);
 
 pub fn internal_name<'a>(input: &'a str) -> PResult<'a, InternalName>{
@@ -24,16 +27,14 @@ pub fn internal_name<'a>(input: &'a str) -> PResult<'a, InternalName>{
     Ok((res, InternalName(name)))
 }
 
+#[derive(Debug)]
 pub struct InternalValue{pub name: InternalName, pub value: (String, Option<Box<Expr>>)}
 
 pub fn internal_value<'a>(input: &'a str) -> PResult<'a, InternalValue>{
     let (input, name) = internal_name(input)?;
     let (input, _) = whitespace0(input)?;
     let (input, _) = Exact("{".into()).invoke(input)?;
-    let (res, (data, _)) = AnyUntil(|a: &'a str, b: &'a str| {
-        let (res, _) = Exact("}".into()).invoke(b)?;
-        Ok((res, ()))
-    }).invoke(input)?;
+    let (res, (data, _)) = AnyUntil(Exact("}".into())).invoke(input)?;
 
     let data = if let Ok((r, e)) = expr(data){
         if r.is_empty(){
@@ -49,6 +50,7 @@ pub fn internal_value<'a>(input: &'a str) -> PResult<'a, InternalValue>{
     Ok((res, InternalValue{name, value: data}))
 }
 
+#[derive(Debug)]
 pub enum Expr{
     InternalValue(InternalValue),
     Variable(Identifier),
@@ -61,12 +63,15 @@ pub fn expr<'a>(input: &'a str) -> PResult<'a, Expr>{
     ).invoke(input)
 }
 
+#[derive(Debug)]
 pub struct Definition{pub name: Identifier, pub value: Expr}
 
 pub fn define<'a>(input: &'a str) -> PResult<'a, Definition>{
     let (input, _) = Exact("define".into()).invoke(input)?;
     let (input, _) = whitespace1(input)?;
     let (input, name) = identity(input)?;
+    let (input, _) = whitespace0(input)?;
+    let (input, _) = Exact("=".into()).invoke(input)?;
     let (input, _) = whitespace0(input)?;
     let (input, value) = expr(input)?;
     let (result, _) = Exact(";".into()).invoke(input)?;

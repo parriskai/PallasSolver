@@ -1,11 +1,14 @@
+use crate::{AnyWhere, PResult, Parser};
+
 /// Consumes any single character
 /// Returns the character consumed
 /// If the input is empty, returns an error
 pub fn any<'a>(input: &'a str) -> PResult<'a, char>{
-    let ic = input.chars();
-    if let Some(c = ic.next(){
-        return (ic.as_str(), c)
+    let mut ic = input.chars();
+    if let Some(c) = ic.next(){
+        return Ok((ic.as_str(), c))
     }
+    Err(())
 }
 
 /// Consumes zero or more whitespace characters

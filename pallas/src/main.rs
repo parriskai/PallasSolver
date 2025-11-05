@@ -1,3 +1,6 @@
+use pallas::parser::define;
+
 fn main() {
-    println!("Hello, world!");
+    let input = include_str!("../../basic.pa");
+    println!("{:#?}", define(input))
 }
