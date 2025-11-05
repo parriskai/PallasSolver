@@ -183,6 +183,13 @@ where
     }
 }
 
+
+/// Min Chars Parser
+/// P: the parser to consume
+/// usize: the minimum number of characters to consume
+/// If the parser succeeds and consumes at least N characters, returns the parsed value.
+/// If the parser succeeds and consumes less than N characters, returns an error.
+/// If the parser fails, returns an error.
 pub struct MinChars<P>(pub P, pub usize);
 
 impl<'a, T, P: Parser<'a, T>> Parser<'a, T> for MinChars<P> {

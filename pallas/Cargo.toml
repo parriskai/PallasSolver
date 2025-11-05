@@ -1,8 +1,7 @@
 [package]
 name = "pallas"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-ordermap = "1.0.0"
 rlex = {path = "../rlex"}
