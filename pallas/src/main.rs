@@ -1,6 +1,6 @@
-use pallas::parser::define;
+use pallas::parser::file;
 
 fn main() {
-    let input = include_str!("../../basic.pa");
-    println!("{:#?}", define(input))
+    let input = include_str!("../../solution/lib.pa");
+    println!("{:?}", file(input));
 }

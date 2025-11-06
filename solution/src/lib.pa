@@ -1,0 +1,9 @@
+define ZERO = $BIGINT{0};
+define ONE = $BIGINT{1};
+
+operation SUCC(A)->B{
+  theorem SuccsessionComparision(){
+    assert B > A by $DEFINITION
+    therefore B > A
+  }
+}

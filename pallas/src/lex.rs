@@ -1,4 +1,5 @@
-use rlex::{AnyUntil, AnyWhere, Exact, MinChars, Optional, Or, PResult, Parser, utils::{whitespace0,whitespace1}};
+use rlex::*;
+use rlex::utils::*;
 
 #[derive(Debug)]
 pub struct Identifier(pub String);
@@ -76,4 +77,22 @@ pub fn define<'a>(input: &'a str) -> PResult<'a, Definition>{
     let (input, value) = expr(input)?;
     let (result, _) = Exact(";".into()).invoke(input)?;
     Ok((result, Definition{name, value}))
+}
+
+#[derive(Debug)]
+pub enum RootStatement{
+    Definition(Definition)
+}
+pub fn root_statement<'a>(input: &'a str) -> PResult<'a, RootStatement>{
+    define(input).map(|d| RootStatement::Definition(d))
+}
+
+#[derive(Debug)]
+pub struct File(pub Vec<Option<RootStatement>>);
+pub fn file<'a>(input: &'a str) -> PResult<'a, File>{
+    let (res, v) = Repetition(
+        root_statement.map(|x| Some(x))
+        .or(whitespace1.map(|_|None))
+    ).invoke(input)?;
+    Ok((res, File(v)))
 }

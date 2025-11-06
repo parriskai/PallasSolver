@@ -244,3 +244,75 @@ tuple_and_parser!(A:PA, B:PB, C:PC, D:PD, E:PE);
 tuple_and_parser!(A:PA, B:PB, C:PC, D:PD, E:PE, F:PF);
 tuple_and_parser!(A:PA, B:PB, C:PC, D:PD, E:PE, F:PF, G:PG);
 tuple_and_parser!(A:PA, B:PB, C:PC, D:PD, E:PE, F:PF, G:PG, H:PH);
+
+
+/// Repetition Parser
+/// P: the parser to repeat
+/// Consumes as many times as possible.
+/// When the parser fails, returns a Vec of all parsed values.
+/// Never returns an error.
+pub struct Repetition<P>(pub P);
+impl<'a, T, P: Parser<'a, T>> Parser<'a, Vec<T>> for Repetition<P>{
+    fn invoke(&self, input: &'a str) -> PResult<'a, Vec<T>>{
+        let mut res = Vec::new();
+        let mut input = input;
+        while let Ok((rem, t)) = self.0.invoke(input){
+            res.push(t);
+            input = rem;
+        }
+        Ok((input, res))
+    }
+}
+
+
+/// Min Repition Parser
+/// P: the parser to repeat
+/// usize: the minimum number of times to repeat
+/// Consumes at least N times.
+/// If the parser succeeds and consumes at least N times, returns a Vec of all parsed values.
+/// Otherwise, returns an error.
+pub struct MinRepetition<P>(pub P, pub usize);
+impl<'a, T, P: Parser<'a, T>> Parser<'a, Vec<T>> for MinRepetition<P>{
+    fn invoke(&self, input: &'a str) -> PResult<'a, Vec<T>>{
+        let mut res = Vec::new();
+        let mut input = input;
+        while let Ok((rem, t)) = self.0.invoke(input){
+            res.push(t);
+            input = rem;
+        }
+        if res.len() >= self.1{
+            Ok((input, res))
+        } else{
+            Err(())
+        }
+    }
+}
+
+/// MinMax Repition Parser
+/// P: the parser to repeat
+/// (Option<usize>, Option<usize>): the minimum and maximum number of times to repeat)
+/// Consumes at least N times and at most M times.
+/// If the parser succeeds and consumes at least N times and at most M times, returns a Vec of all parsed values.
+/// Otherwise, returns an error.
+pub struct MinMaxRepetition<P>(pub P, pub (Option<usize>, Option<usize>));
+impl<'a, T, P: Parser<'a, T>> Parser<'a, Vec<T>> for MinMaxRepetition<P>{
+    fn invoke(&self, input: &'a str) -> PResult<'a, Vec<T>>{
+        let mut res = Vec::new();
+        let mut input = input;
+        while let Ok((rem, t)) = self.0.invoke(input){
+            res.push(t);
+            input = rem;
+        }
+        if let Some(min) = self.1.0{
+            if res.len() < min{
+                return Err(());
+            }
+        }
+        if let Some(max) = self.1.1{
+            if res.len() > max{
+                return Err(());
+            }
+        }
+        Ok((input, res))
+    }
+}
