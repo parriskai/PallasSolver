@@ -1,98 +1,79 @@
-use rlex::*;
-use rlex::utils::*;
+use rlex::{AnyWhere, MinChars, Optional, PResult, Parser, Punctuated, utils::whitespace1};
+
+pub mod keywords{
+    use rlex::ExactStaticStr;
+
+    pub static AS: ExactStaticStr = ExactStaticStr("as");
+    pub static USE: ExactStaticStr = ExactStaticStr("use");
+}
+
+pub mod symbols{
+    use rlex::ExactStaticStr;
+
+    pub static STAR: ExactStaticStr = ExactStaticStr("*");
+    pub static DOUBLE_COLON: ExactStaticStr = ExactStaticStr("::");
+    pub static LEFT_CB: ExactStaticStr = ExactStaticStr("{");
+    pub static RIGHT_CB: ExactStaticStr = ExactStaticStr("}");
+    pub static COMMA: ExactStaticStr = ExactStaticStr(",");
+}
+
+macro_rules! ws_wrapped {
+    ($t: expr) => {(::rlex::utils::whitespace0, $t, ::rlex::utils::whitespace0).map(|(_,v,_)|v)};
+}
 
 #[derive(Debug)]
-pub struct Identifier(pub String);
+pub struct Name(pub String);
 
-pub fn identity<'a>(input: &'a str) -> PResult<'a, Identifier>{
-    println!("");
+pub fn name<'a>(input: &'a str) -> PResult<'a, Name>{
     (
         MinChars(AnyWhere(|c: char| c.is_alphabetic() || c == '_'), 1),
         Optional(AnyWhere(|c:char | c.is_alphanumeric()))
     ).invoke(input)
      .map(|(res, (a, b)) | {
             if let Some(b) = b{
-                return (res, Identifier(a.to_string() + b));
+                return (res, Name(a.to_string() + b));
             } else {
-                return (res, Identifier(a.to_string()));
+                return (res, Name(a.to_string()));
             }
     })
 }
 
 #[derive(Debug)]
-pub struct InternalName(pub Identifier);
-
-pub fn internal_name<'a>(input: &'a str) -> PResult<'a, InternalName>{
-    let (input, _) = Exact("$".into()).invoke(input)?;
-    let (res, name) = identity(input)?;
-    Ok((res, InternalName(name)))
+pub enum Path {
+    WildCard,
+    PathAs(Box<Path>, Name),
+    MultiPath(Vec<Path>),
+    Ordinary(Name, Option<Box<Path>>)
 }
 
-#[derive(Debug)]
-pub struct InternalValue{pub name: InternalName, pub value: (String, Option<Box<Expr>>)}
-
-pub fn internal_value<'a>(input: &'a str) -> PResult<'a, InternalValue>{
-    let (input, name) = internal_name(input)?;
-    let (input, _) = whitespace0(input)?;
-    let (input, _) = Exact("{".into()).invoke(input)?;
-    let (res, (data, _)) = AnyUntil(Exact("}".into())).invoke(input)?;
-
-    let data = if let Ok((r, e)) = expr(data){
-        if r.is_empty(){
-            (data.to_string(), Some(Box::new(e)))
-        }
-        else {
-            (data.to_string(), None)
-        }
-    } else {
-        (data.to_string(), None)
-    };
-
-    Ok((res, InternalValue{name, value: data}))
+fn single_path_ordinary<'a>(input: &'a str) -> PResult<'a, Path>{
+    (name, Optional((symbols::DOUBLE_COLON, single_path_ordinary))).map(|(n, o)| Path::Ordinary(n, o.map(|(_,p)|Box::new(p)))).invoke(input)
 }
 
-#[derive(Debug)]
-pub enum Expr{
-    InternalValue(InternalValue),
-    Variable(Identifier),
+fn path_ordinary<'a>(input: &'a str) -> PResult<'a, Path>{
+    (name, Optional((symbols::DOUBLE_COLON, path_not_as))).map(|(n, o)| Path::Ordinary(n, o.map(|(_,p)|Box::new(p)))).invoke(input)
 }
 
-pub fn expr<'a>(input: &'a str) -> PResult<'a, Expr>{
-    Or(
-        internal_value.map(|v| Expr::InternalValue(v)),
-        identity.map(|v| Expr::Variable(v))
-    ).invoke(input)
+fn multi_path<'a>(input: &'a str) -> PResult<'a, Path>{
+    (
+        symbols::LEFT_CB,
+        ws_wrapped!(Punctuated(path,ws_wrapped!(symbols::COMMA)).map(|i| i.into_iter().map(|x| x.0).collect())),
+        symbols::RIGHT_CB
+    ).map(|(_, l, _)| Path::MultiPath(l)).invoke(input)
 }
 
-#[derive(Debug)]
-pub struct Definition{pub name: Identifier, pub value: Expr}
-
-pub fn define<'a>(input: &'a str) -> PResult<'a, Definition>{
-    let (input, _) = Exact("define".into()).invoke(input)?;
-    let (input, _) = whitespace1(input)?;
-    let (input, name) = identity(input)?;
-    let (input, _) = whitespace0(input)?;
-    let (input, _) = Exact("=".into()).invoke(input)?;
-    let (input, _) = whitespace0(input)?;
-    let (input, value) = expr(input)?;
-    let (result, _) = Exact(";".into()).invoke(input)?;
-    Ok((result, Definition{name, value}))
+fn path_not_as<'a>(input: &'a str) -> PResult<'a, Path>{
+    path_ordinary.or(multi_path).or(symbols::STAR.map(|_| Path::WildCard)).invoke(input)
 }
 
-#[derive(Debug)]
-pub enum RootStatement{
-    Definition(Definition)
-}
-pub fn root_statement<'a>(input: &'a str) -> PResult<'a, RootStatement>{
-    define(input).map(|d| RootStatement::Definition(d))
+fn path_as<'a>(input: &'a str) -> PResult<'a, Path>{
+    (single_path_ordinary, whitespace1, keywords::AS, whitespace1, name).map(|(p, _, _, _, n)| Path::PathAs(Box::new(p), n)).invoke(input)
 }
 
-#[derive(Debug)]
-pub struct File(pub Vec<Option<RootStatement>>);
-pub fn file<'a>(input: &'a str) -> PResult<'a, File>{
-    let (res, v) = Repetition(
-        root_statement.map(|x| Some(x))
-        .or(whitespace1.map(|_|None))
-    ).invoke(input)?;
-    Ok((res, File(v)))
+pub fn path<'a>(input: &'a str) -> PResult<'a, Path>{
+    symbols::STAR.map(|_| Path::WildCard)
+        .or(path_as)
+        .or(path_ordinary)
+        .or(multi_path)
+        .invoke(input)
 }

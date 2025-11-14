@@ -1,6 +1,6 @@
-use pallas::parser::file;
+use pallas::lex::path;
 
 fn main() {
-    let input = include_str!("../../solution/lib.pa");
-    println!("{:?}", file(input));
+    let input = include_str!("../../solution/src/lib.pa");
+    println!("{:#?}", path(input));
 }

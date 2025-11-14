@@ -1,0 +1,9 @@
+#[internal]
+macro BIGINT{/* Builtin Implementation */}
+
+#[internal]
+fn bigint_succ(value: BIGINT) -> BIGINT{
+    impl{
+        /* Builtin Implementation */
+    }
+}

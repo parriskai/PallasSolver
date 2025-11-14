@@ -1,9 +1,3 @@
-define ZERO = $BIGINT{0};
-define ONE = $BIGINT{1};
+use module::internal::BIGINT;
 
-operation SUCC(A)->B{
-  theorem SuccsessionComparision(){
-    assert B > A by $DEFINITION
-    therefore B > A
-  }
-}
+define ZERO = BIGINT!{0};

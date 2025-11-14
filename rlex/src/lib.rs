@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, mem::MaybeUninit};
 use concat_idents::concat_idents;
 pub mod utils;
 
@@ -83,11 +83,26 @@ where F: Fn(&'a str) -> PResult<'a, T>{
 /// Consumes exactly the string given.
 /// If the input starts with the string, returns a blank Ok value.
 /// If the input does not start with the string, returns an error.
-pub struct Exact(pub String);
+pub struct ExactString(pub String);
 
-impl<'a> Parser<'a, ()> for Exact {
+impl<'a> Parser<'a, ()> for ExactString {
     fn invoke(&self, input: &'a str) -> PResult<'a, ()> {
         if input.starts_with(self.0.as_str()){
+            Ok((&input[self.0.len()..],()))
+        } else {Err(())}
+    }
+}
+
+/// Exact Static String type Parser
+/// &'static str: a static string generated at compile time
+/// static creation Exact like ExactString
+///
+#[derive(Clone, Copy)]
+pub struct ExactStaticStr(pub &'static str);
+
+impl<'a> Parser<'a, ()> for ExactStaticStr {
+    fn invoke(&self, input: &'a str) -> PResult<'a, ()> {
+        if input.starts_with(self.0){
             Ok((&input[self.0.len()..],()))
         } else {Err(())}
     }
@@ -314,5 +329,28 @@ impl<'a, T, P: Parser<'a, T>> Parser<'a, Vec<T>> for MinMaxRepetition<P>{
             }
         }
         Ok((input, res))
+    }
+}
+
+pub struct Punctuated<P, S>(pub P, pub S);
+impl <'a, T, K, P: Parser<'a, T>, S: Parser<'a, K>> Parser<'a, Vec<(T, Option<K>)>> for Punctuated<P, S> {
+    fn invoke(&self, input: &'a str) -> PResult<'a, Vec<(T, Option<K>)>> {
+        let mut out = Vec::new();
+        let mut input = input;
+        loop {
+            let item = if let Ok((res, data)) = self.0.invoke(input){
+                input = res;
+                data
+            } else {break};
+
+            if let Ok((res, sep)) = self.1.invoke(input){
+                input = res;
+                out.push((item, Some(sep)));
+            } else {
+                out.push((item, None));
+                break;
+            }
+        }
+        Ok((input, out))
     }
 }
